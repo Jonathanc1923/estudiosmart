@@ -542,9 +542,16 @@ app.get('/api/prediction/:predictionId', (req, res) => {
 // -------------------------------------------------------------
 // INTELLIGENT PAYMENT AUDIT WITH 3-ATTEMPT DAILY LIMIT
 // -------------------------------------------------------------
+// -------------------------------------------------------------
+// INTELLIGENT PAYMENT AUDIT WITH GEMINI 2.5 FLASH & ERROR HANDLING
+// -------------------------------------------------------------
 async function analyzeVoucherWithGemini(voucherBase64) {
   if (!voucherBase64) {
-    return { es_valido_s15_reciente: false, motivo_rechazo: 'No se subió imagen de comprobante.' };
+    return {
+      ok: false,
+      errorType: 'MISSING_IMAGE',
+      detail: 'No se subió imagen de comprobante.'
+    };
   }
 
   let mimeType = 'image/jpeg';
@@ -572,23 +579,34 @@ async function analyzeVoucherWithGemini(voucherBase64) {
   const peruDateOnly = peruTimeStr.split(',')[0].trim();
 
   const prompt = `
-Eres un auditor experto de seguridad financiera para Estudio Smart en Perú.
+Eres un auditor experto de seguridad financiera e Inteligencia Artificial para Estudio Smart en Perú.
 Analiza este comprobante de pago con MÁXIMA RIGUROSIDAD.
 
-DATOS ACTUALES EN PERÚ:
-- Fecha y Hora actual en Perú (UTC-5): ${peruTimeStr}
-- Fecha de hoy: ${peruDateOnly}
-- Titular oficial: Jonathan Encina (917858325 / BCP 21505929964057)
-- Monto requerido: S/ 15.00 PEN (o superior)
-- Antigüedad máxima: 2 horas (120 min)
+DATOS ACTUALES DE REFERENCIA EN PERÚ:
+- Fecha y Hora actual exacta en Perú (UTC-5): ${peruTimeStr}
+- Fecha de hoy en Perú: ${peruDateOnly}
+- Titular oficial de la cuenta: Jonathan Encina (Yape 917858325 / BCP 21505929964057)
+- Monto requerido para el paquete: S/ 15.00 PEN (o superior)
+- Antigüedad máxima permitida: 2 horas (120 minutos)
 
-REGLAS DE VALIDACIÓN:
-1. Comprueba autenticidad y éxito de la transacción.
-2. Extrae: metodo_pago, monto, fecha_comprobante (DD/MM/YYYY), hora_comprobante (HH:MM), numero_operacion, destinatario, minutos_antiguedad.
-3. "es_valido_s15_reciente": true SI Y SOLO SI monto >= S/ 15.00, fecha = HOY en Perú, antigüedad <= 120 minutos.
-4. "motivo_rechazo": explicación clara si no cumple.
+REGLAS DE AUDITORÍA:
+1. Comprueba si la imagen es un comprobante de pago genuino y completado con éxito.
+2. Extrae con exactitud:
+   - "metodo_pago": "Yape", "Plin", "BCP", "Interbank", etc.
+   - "monto": número decimal exacto pagado en Soles (ej: 15.00)
+   - "fecha_comprobante": fecha visible en el comprobante (formato DD/MM/YYYY)
+   - "hora_comprobante": hora visible en el comprobante (formato HH:MM)
+   - "numero_operacion": código o número de operación visible
+   - "destinatario": nombre o número receptor visible
+   - "minutos_antiguedad": minutos transcurridos estimados desde que se hizo el pago hasta ahora (${peruTimeStr}).
+   - "es_valido_s15_reciente": true SOLAMENTE SI cumple TODAS estas condiciones:
+       a) El monto es IGUAL O MAYOR a S/ 15.00 PEN.
+       b) La fecha corresponde exactamente a HOY (${peruDateOnly}) en Perú.
+       c) La antigüedad es MENOR O IGUAL A 2 HORAS (120 minutos).
+       d) Es un comprobante auténtico y legible.
+   - "motivo_rechazo": si es_valido_s15_reciente es false, explica claramente en español la razón (ej: "El comprobante es de una fecha anterior a hoy (emitido el DD/MM/YYYY)", "El pago tiene más de 2 horas de antigüedad (emitido hace X minutos)", "El monto pagado es de S/ X y no de S/ 15.00", "La imagen no es un comprobante de pago legible").
 
-Responde ÚNICAMENTE en JSON válido:
+Devuelve ÚNICAMENTE un JSON válido:
 {
   "es_valido_s15_reciente": true,
   "metodo_pago": "Yape",
@@ -604,15 +622,31 @@ Responde ÚNICAMENTE en JSON válido:
 `;
 
   const payload = {
-    contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: rawBase64 } }] }],
-    generationConfig: { temperature: 0.1, response_mime_type: 'application/json' }
+    contents: [
+      {
+        parts: [
+          { text: prompt },
+          {
+            inline_data: {
+              mime_type: mimeType,
+              data: rawBase64
+            }
+          }
+        ]
+      }
+    ],
+    generationConfig: {
+      temperature: 0.1,
+      response_mime_type: 'application/json'
+    }
   };
 
-  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
-  let parsedResult = null;
+  const models = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-2.5-flash-lite'];
+  let lastErrorDetail = '';
 
   for (const model of models) {
     try {
+      console.log(`🔍 Consultando ${model} para auditar comprobante...`);
       const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -626,16 +660,26 @@ Responde ÚNICAMENTE en JSON válido:
           let clean = rawText.trim();
           if (clean.startsWith('```json')) clean = clean.replace(/^```json\s*/, '').replace(/\s*```$/, '');
           else if (clean.startsWith('```')) clean = clean.replace(/^```\s*/, '').replace(/\s*```$/, '');
-          parsedResult = JSON.parse(clean);
-          break;
+          const parsed = JSON.parse(clean);
+          console.log(`✅ Auditoría exitosa con ${model}:`, parsed);
+          return { ok: true, data: parsed };
         }
+      } else {
+        const errText = await apiRes.text();
+        lastErrorDetail = `Status ${apiRes.status}: ${errText.substring(0, 200)}`;
+        console.warn(`Aviso ${model} (${apiRes.status}):`, errText);
       }
     } catch (e) {
-      console.warn(`Aviso con ${model}:`, e.message);
+      lastErrorDetail = e.message;
+      console.warn(`Error llamando ${model}:`, e.message);
     }
   }
 
-  return parsedResult;
+  return {
+    ok: false,
+    errorType: 'AI_UNAVAILABLE_404',
+    detail: lastErrorDetail || 'El servicio de IA no pudo procesar la imagen.'
+  };
 }
 
 app.post('/api/verify-payment', async (req, res) => {
@@ -662,8 +706,10 @@ app.post('/api/verify-payment', async (req, res) => {
       return res.status(429).json({
         success: false,
         isRejected: true,
+        statusCode: 429,
+        errorType: 'DAILY_LIMIT_REACHED',
         error: 'Has alcanzado el límite máximo de 3 intentos de verificación de comprobante por hoy.',
-        reason: 'Por seguridad del sistema solo se permiten 3 comprobantes diarios por cliente. Escríbenos a nuestro WhatsApp oficial para validarlo manualmente.',
+        reason: 'Por seguridad del sistema solo se permiten 3 comprobantes diarios por cliente. Escríbenos a WhatsApp para validarlo manualmente.',
         attemptsToday: attemptCheck.attemptsToday,
         attemptsLeft: 0,
         maxAttempts: 3,
@@ -673,20 +719,26 @@ app.post('/api/verify-payment', async (req, res) => {
     }
 
     // 2. Perform Intelligent AI Audit
-    const aiAnalysis = await analyzeVoucherWithGemini(voucherBase64);
+    const analysisResult = await analyzeVoucherWithGemini(voucherBase64);
 
-    if (!aiAnalysis) {
-      return res.status(400).json({
+    // If Gemini could not process the image -> Return 404 Error (AI Failure)
+    if (!analysisResult.ok || !analysisResult.data) {
+      console.error('❌ Error 404: La IA no procesó la imagen del comprobante. Detalle:', analysisResult.detail);
+      return res.status(404).json({
         success: false,
         isRejected: true,
-        error: 'No se pudo auditar el comprobante automáticamente en este momento.',
-        reason: 'Puedes enviar tu comprobante a WhatsApp para que nuestro equipo lo autorice de inmediato.',
+        statusCode: 404,
+        errorType: 'AI_UNAVAILABLE_404',
+        error: 'Error 404: La IA no pudo procesar o analizar la imagen del comprobante.',
+        reason: 'La IA no pudo procesar la imagen (Error 404). Puedes enviar tu comprobante directamente a nuestro WhatsApp para que un humano lo valide y te active tus 50 fotos.',
+        detail: analysisResult.detail,
         attemptsLeft: attemptCheck.attemptsLeft,
         whatsappPhone: WHATSAPP_SUPPORT_PHONE,
         whatsappLink: whatsappUrl
       });
     }
 
+    const aiAnalysis = analysisResult.data;
     const detectedOpCode = (aiAnalysis.numero_operacion || operationCode || '').trim();
     const detectedAmount = Number(aiAnalysis.monto) || 0;
     const isRecentAndValid = aiAnalysis.es_valido_s15_reciente === true && detectedAmount >= 15;
@@ -698,10 +750,21 @@ app.post('/api/verify-payment', async (req, res) => {
         p => p.status === 'verified' && p.operationCode && p.operationCode.trim().toLowerCase() === detectedOpCode.toLowerCase()
       );
       if (isDuplicate) {
-        return res.status(400).json({
+        return res.status(422).json({
           success: false,
           isRejected: true,
-          error: 'Este comprobante / código de operación (' + detectedOpCode + ') ya fue verificado anteriormente.',
+          statusCode: 422,
+          errorType: 'DUPLICATE_PAYMENT',
+          error: 'Error en datos: Este comprobante / código de operación (' + detectedOpCode + ') ya fue verificado anteriormente.',
+          reason: 'El código de operación ya fue utilizado. Si crees que es un error, contáctanos a WhatsApp.',
+          detectedData: {
+            monto: detectedAmount,
+            fecha: aiAnalysis.fecha_comprobante,
+            hora: aiAnalysis.hora_comprobante,
+            metodo: aiAnalysis.metodo_pago,
+            minutos_antiguedad: aiAnalysis.minutos_antiguedad,
+            numero_operacion: detectedOpCode
+          },
           attemptsLeft: attemptCheck.attemptsLeft,
           whatsappPhone: WHATSAPP_SUPPORT_PHONE,
           whatsappLink: whatsappUrl
@@ -709,12 +772,26 @@ app.post('/api/verify-payment', async (req, res) => {
       }
     }
 
+    // If Payment Data is Invalid (wrong hour, wrong day, wrong amount) -> Return 422 Error (Error en datos)
     if (!isRecentAndValid) {
       const rejectReason = aiAnalysis.motivo_rechazo || 'El comprobante no corresponde al monto de S/ 15.00 o tiene más de 2 horas de antigüedad.';
-      return res.status(400).json({
+      console.warn(`❌ Error en datos de pago para ${userId}: ${rejectReason} (Monto: S/ ${detectedAmount}, Antigüedad: ${aiAnalysis.minutos_antiguedad}m)`);
+
+      return res.status(422).json({
         success: false,
         isRejected: true,
-        error: rejectReason,
+        statusCode: 422,
+        errorType: 'INVALID_PAYMENT_DATA',
+        error: 'Error en datos: ' + rejectReason,
+        reason: rejectReason,
+        detectedData: {
+          monto: detectedAmount,
+          fecha: aiAnalysis.fecha_comprobante,
+          hora: aiAnalysis.hora_comprobante,
+          metodo: aiAnalysis.metodo_pago,
+          minutos_antiguedad: aiAnalysis.minutos_antiguedad,
+          numero_operacion: detectedOpCode
+        },
         attemptsLeft: attemptCheck.attemptsLeft,
         whatsappPhone: WHATSAPP_SUPPORT_PHONE,
         whatsappLink: whatsappUrl
@@ -757,7 +834,7 @@ app.post('/api/verify-payment', async (req, res) => {
   } catch (err) {
     console.error('Error in /api/verify-payment:', err);
     res.status(500).json({
-      error: 'Error interno en la verificación de pago.',
+      error: 'Error interno en la verificación de pago: ' + err.message,
       whatsappPhone: WHATSAPP_SUPPORT_PHONE,
       whatsappLink: `https://wa.me/${WHATSAPP_SUPPORT_NUMBER_CLEAN}?text=${encodeURIComponent('Hola Estudio Smart, tuve un error al verificar mi pago de S/ 15.')}`
     });

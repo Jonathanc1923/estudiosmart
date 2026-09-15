@@ -58,6 +58,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [isVerifying, setIsVerifying] = useState(false);
   const [botStatusStep, setBotStatusStep] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<string | null>(null);
+  const [detectedData, setDetectedData] = useState<any>(null);
   const [whatsappFallbackLink, setWhatsappFallbackLink] = useState<string | null>(null);
   const [verifiedSuccess, setVerifiedSuccess] = useState(false);
 
@@ -137,9 +139,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         setIsVerifying(false);
         const errMsg = data.error || 'No se pudo verificar el pago automáticamente.';
         setErrorMessage(errMsg);
+        setErrorType(data.errorType || (res.status === 404 ? 'AI_UNAVAILABLE_404' : 'INVALID_PAYMENT_DATA'));
+        setDetectedData(data.detectedData || null);
 
         const waMsg = encodeURIComponent(
-          `Hola Estudio Smart, solicito revisión humana de mi comprobante de pago de S/ 15.\nMi correo: ${user.email}\nMotivo de rechazo del bot: ${errMsg}`
+          `Hola Estudio Smart, solicito revisión humana de mi comprobante de pago de S/ 15.\nMi correo: ${user.email}\nMotivo: ${errMsg}`
         );
         setWhatsappFallbackLink(data.whatsappLink || `https://wa.me/${WHATSAPP_HUMAN_CLEAN}?text=${waMsg}`);
         return;
@@ -437,21 +441,67 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 </div>
               </div>
 
-              {/* Error Alert with WhatsApp Support fallback */}
+              {/* Error Alert with Detailed Diagnostics & WhatsApp fallback */}
               {errorMessage && (
-                <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs space-y-2.5 animate-fade-in">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="text-rose-300 font-bold block">No se pudo autorizar el acceso automático:</strong>
-                      <span>{errorMessage}</span>
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs space-y-3 animate-fade-in">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <strong className="text-rose-300 font-bold text-xs sm:text-sm">
+                          {errorType === 'AI_UNAVAILABLE_404'
+                            ? '⚠️ Error 404: La IA no procesó la imagen'
+                            : errorType === 'DAILY_LIMIT_REACHED'
+                            ? '🚫 Límite de Intentos Alcanzado'
+                            : '❌ Error en Datos del Comprobante'}
+                        </strong>
+                      </div>
+                      <p className="text-xs text-rose-100 leading-relaxed font-medium">
+                        {errorMessage}
+                      </p>
                     </div>
                   </div>
+
+                  {/* Diagnostic Breakdown Card if Data was Extracted */}
+                  {detectedData && (
+                    <div className="p-3 rounded-xl bg-navy-950/80 border border-rose-500/30 text-[11px] text-slate-300 space-y-1.5 shadow-inner">
+                      <div className="font-bold text-rose-300 uppercase tracking-wider text-[10px] flex items-center gap-1 mb-1">
+                        <span>Datos detectados en el comprobante:</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-slate-400">Monto detectado:</span>{' '}
+                          <strong className="text-white">
+                            {detectedData.monto !== undefined ? `S/ ${Number(detectedData.monto).toFixed(2)}` : 'No detectado'}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Método:</span>{' '}
+                          <strong className="text-white">{detectedData.metodo || 'No especificado'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Fecha en foto:</span>{' '}
+                          <strong className="text-white">{detectedData.fecha || 'No detectada'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Hora / Antigüedad:</span>{' '}
+                          <strong className="text-white">
+                            {detectedData.hora || ''} {detectedData.minutos_antiguedad !== undefined ? `(${detectedData.minutos_antiguedad} min)` : ''}
+                          </strong>
+                        </div>
+                      </div>
+                      {detectedData.numero_operacion && (
+                        <div className="pt-1 border-t border-slate-800 text-[10px] text-slate-400">
+                          Código Op: <span className="font-mono text-cyan-300">{detectedData.numero_operacion}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {whatsappFallbackLink && (
                     <div className="pt-2 border-t border-rose-500/30">
                       <p className="text-[11px] text-slate-300 mb-2">
-                        Si tu pago es legítimo, puedes enviarlo directamente por WhatsApp a nuestro equipo para que un humano lo valide y te autorice el acceso:
+                        Si tu pago es legítimo, puedes enviarlo directamente por WhatsApp para que un humano lo valide y te active tus 50 fotos:
                       </p>
                       <a
                         href={whatsappFallbackLink}
@@ -460,7 +510,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                         className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-600/30 transition-all cursor-pointer"
                       >
                         <MessageCircle className="w-4 h-4" />
-                        <span>Enviar a WhatsApp ({WHATSAPP_HUMAN_PHONE})</span>
+                        <span>Enviar Comprobante a WhatsApp ({WHATSAPP_HUMAN_PHONE})</span>
                       </a>
                     </div>
                   )}
