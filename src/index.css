@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#070C18] text-slate-100 font-sans antialiased overflow-x-hidden;
+  }
+}
+
+.font-display {
+  font-family: 'Outfit', 'Inter', sans-serif;
+}
+
+/* Glassmorphism */
+.glass-panel {
+  background: rgba(13, 22, 43, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(34, 204, 226, 0.15);
+}
+
+.glass-panel-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-panel-hover:hover {
+  background: rgba(19, 33, 66, 0.85);
+  border-color: rgba(34, 204, 226, 0.4);
+  box-shadow: 0 10px 30px -10px rgba(0, 180, 216, 0.25);
+}
+
+.glass-card {
+  background: rgba(19, 33, 66, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Watermark styles */
+.watermark-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  user-select: none;
+}
+
+.watermark-text {
+  transform: rotate(-30deg);
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 900;
+  font-size: 1.5rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 180, 216, 0.5);
+  white-space: nowrap;
+}
+
+@media (min-width: 640px) {
+  .watermark-text {
+    font-size: 2.2rem;
+    letter-spacing: 0.25em;
+  }
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.scrollbar-none {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #070C18;
+}
+::-webkit-scrollbar-thumb {
+  background: #1C2F5A;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #15A3C7;
+}
