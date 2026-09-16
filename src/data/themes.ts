@@ -243,20 +243,20 @@ export const THEMES: Theme[] = [
     "prompt": "Classic fine art newborn baby portrait. Keep the exact baby face and tender newborn age. Swaddled snugly in thick chunky knit merino wool wrap inside a rustic handcrafted wooden bowl basket, surrounded by delicate dried eucalyptus and baby breath flowers, warm soft daylight studio photography, 8k."
   },
   {
-    "id": "baby-bath-bubbles",
-    "name": "Bebé en Bañera Vintage con Burbujas",
+    "id": "baby-vintage-aviator",
+    "name": "Bebé Aviador Clásico & Nubes de Ensueño",
     "category": "bebes",
     "sectionName": "Bebés & Recién Nacidos",
-    "description": "Sesión divertida y tierna en mini tina victoriana de patas de león con espuma suave de burbujas y patitos de goma.",
-    "clothingMale": "Bebé en bañera vintage con gorrito de baño de toalla suave y pompas de jabón brillantes.",
-    "clothingFemale": "Bebé en bañerita con turbante suave de toalla de algodón y espuma esponjosa.",
-    "clothingKidsCouples": "Divertida sesión de baño de burbujas con toallas mullidas de oso para bebés.",
-    "badge": "Burbujas & Agua",
+    "description": "Tierna aventura aérea con gorrito de aviador de cuero suave con gafas, avioncito clásico de madera y nubes acolchadas.",
+    "clothingMale": "Chaqueta bomber de bebé en pana suave con cuello de borreguito, mameluco abrigado y gorrito clásico de aviador.",
+    "clothingFemale": "Enterito de punto abrigado en tono marfil o rosa con chaquetita de borreguito y gorrito de aviadora con gafas.",
+    "clothingKidsCouples": "Atuendos clásicos de pequeños aviadores con ropita suave y cómoda para bebés.",
+    "badge": "Aviador Bebé",
     "popular": true,
-    "gradient": "from-cyan-300 via-sky-400 to-blue-500",
+    "gradient": "from-sky-400 via-amber-400 to-indigo-600",
     "iconName": "Heart",
-    "sampleImage": "/samples/baby_bath_bubbles.webp",
-    "prompt": "Adorable baby bubble bath studio portrait. Strictly maintain exact baby likeness, gender, and tender baby age. Sitting happily in an antique white clawfoot mini bathtub filled with fluffy soap foam bubbles, floating yellow rubber ducks, warm soft bathroom studio daylight, 8k."
+    "sampleImage": "/samples/baby_vintage_aviator.webp",
+    "prompt": "Charming vintage baby aviator pilot studio portrait. Strictly maintain exact baby facial likeness, gender, ethnicity, and tender baby age. Fully dressed in cozy soft knit romper with miniature shearling aviator bomber jacket and cute soft leather pilot goggles hat. Sitting next to a handcrafted classic wooden toy airplane on a bed of fluffy cotton clouds, warm golden studio lighting, 8k photorealistic."
   },
   {
     "id": "baby-cosmic-astronaut",

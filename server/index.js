@@ -47,7 +47,7 @@ if (fs.existsSync(distDir)) {
 // ENVIRONMENT & CREDENTIALS CONFIGURATION (READ FROM PROCESS.ENV)
 // -------------------------------------------------------------
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_KEY || '';
 
 const WHATSAPP_SUPPORT_PHONE = process.env.WHATSAPP_PHONE || '+51 907 318 642';
 const WHATSAPP_SUPPORT_NUMBER_CLEAN = process.env.WHATSAPP_CLEAN || '51907318642';
@@ -621,14 +621,23 @@ Devuelve ÚNICAMENTE un JSON válido:
 }
 `;
 
+  if (!GEMINI_API_KEY) {
+    console.error('❌ Error: GEMINI_API_KEY no está configurada en las variables de entorno.');
+    return {
+      ok: false,
+      errorType: 'AI_UNAVAILABLE_404',
+      detail: 'Clave GEMINI_API_KEY no configurada en el servidor.'
+    };
+  }
+
   const payload = {
     contents: [
       {
         parts: [
           { text: prompt },
           {
-            inline_data: {
-              mime_type: mimeType,
+            inlineData: {
+              mimeType: mimeType,
               data: rawBase64
             }
           }
@@ -637,11 +646,11 @@ Devuelve ÚNICAMENTE un JSON válido:
     ],
     generationConfig: {
       temperature: 0.1,
-      response_mime_type: 'application/json'
+      responseMimeType: 'application/json'
     }
   };
 
-  const models = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-2.5-flash-lite'];
+  const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro'];
   let lastErrorDetail = '';
 
   for (const model of models) {
@@ -666,11 +675,11 @@ Devuelve ÚNICAMENTE un JSON válido:
         }
       } else {
         const errText = await apiRes.text();
-        lastErrorDetail = `Status ${apiRes.status}: ${errText.substring(0, 200)}`;
+        lastErrorDetail = `Status ${apiRes.status} (${model}): ${errText.substring(0, 200)}`;
         console.warn(`Aviso ${model} (${apiRes.status}):`, errText);
       }
     } catch (e) {
-      lastErrorDetail = e.message;
+      lastErrorDetail = `${model} error: ${e.message}`;
       console.warn(`Error llamando ${model}:`, e.message);
     }
   }
