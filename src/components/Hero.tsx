@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Camera, Zap, CheckCircle2, ArrowRight, ShieldCheck, HeartHandshake } from 'lucide-react';
+import { Sparkles, Camera, Zap, CheckCircle2, ArrowRight, ShieldCheck, HeartHandshake, KeyRound } from 'lucide-react';
 
 interface HeroProps {
   onStartClick: () => void;
@@ -23,7 +23,7 @@ export const Hero: React.FC<HeroProps> = ({ onStartClick, onOpenPricing }) => {
           {/* Top Pill */}
           <div className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-[11px] sm:text-xs md:text-sm font-semibold mb-4 sm:mb-6 shadow-inner animate-pulse-slow">
             <Sparkles className="w-3.5 h-3.5 text-smartgold-400 shrink-0" />
-            <span className="truncate">Estudio Fotográfico IA Ultra HD • 100% Retratos</span>
+            <span className="truncate">Estudio Fotográfico IA Ultra HD • Retratos de Alta Costura</span>
           </div>
 
           {/* Main Title */}
@@ -37,7 +37,7 @@ export const Hero: React.FC<HeroProps> = ({ onStartClick, onOpenPricing }) => {
 
           {/* Subtitle */}
           <p className="text-slate-300 text-xs sm:text-base md:text-xl max-w-2xl mx-auto mb-6 sm:mb-10 leading-relaxed font-normal px-2">
-            Sube cualquier foto tuya y obtén al instante sesiones fotográficas de nivel profesional: estilos de catálogo o escribe tu propia temática 100% personalizada.
+            Sube cualquier foto tuya y obtén al instante sesiones fotográficas de nivel profesional: explora más de 100 estilos de catálogo o escribe tu propia temática 100% personalizada.
           </p>
 
           {/* CTA Buttons */}
@@ -47,7 +47,7 @@ export const Hero: React.FC<HeroProps> = ({ onStartClick, onOpenPricing }) => {
               className="w-full sm:w-auto px-6 sm:px-8 py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-navy-950 font-extrabold text-sm sm:text-base lg:text-lg shadow-xl shadow-cyan-500/30 hover:shadow-cyan-400/50 hover:scale-[1.02] transition-all flex items-center justify-center gap-2.5 group cursor-pointer"
             >
               <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-navy-950 group-hover:rotate-12 transition-transform" />
-              <span>Crear Mi Foto Gratis</span>
+              <span>Comenzar a Crear Retratos</span>
               <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 text-navy-950 group-hover:translate-x-1 transition-transform" />
             </button>
 
@@ -55,10 +55,8 @@ export const Hero: React.FC<HeroProps> = ({ onStartClick, onOpenPricing }) => {
               onClick={onOpenPricing}
               className="w-full sm:w-auto px-5 sm:px-7 py-3 sm:py-4 rounded-2xl bg-navy-900/80 hover:bg-navy-800 text-white font-bold text-xs sm:text-sm md:text-base border border-cyan-500/30 hover:border-cyan-400 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>50 Fotos por S/ 15</span>
-              <span className="px-2 py-0.5 rounded bg-smartgold-500/20 text-smartgold-400 text-[10px] sm:text-xs font-bold">
-                Yape / BCP
-              </span>
+              <KeyRound className="w-4 h-4 text-smartgold-400" />
+              <span>Acceso & Recarga de Fotos</span>
             </button>
           </div>
 
@@ -66,19 +64,19 @@ export const Hero: React.FC<HeroProps> = ({ onStartClick, onOpenPricing }) => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 md:gap-4 max-w-4xl mx-auto pt-4 border-t border-slate-800/80 text-left">
             <div className="flex items-center gap-2 p-2 sm:p-2.5 rounded-xl bg-navy-900/50 border border-slate-800/90">
               <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400 shrink-0" />
-              <span className="text-[11px] sm:text-xs md:text-sm font-medium text-slate-300 leading-tight">1 Foto Gratis con Google</span>
+              <span className="text-[11px] sm:text-xs md:text-sm font-medium text-slate-300 leading-tight">Acceso Directo con Contraseña</span>
             </div>
             <div className="flex items-center gap-2 p-2 sm:p-2.5 rounded-xl bg-navy-900/50 border border-slate-800/90">
               <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-smartgold-400 shrink-0" />
-              <span className="text-[11px] sm:text-xs md:text-sm font-medium text-slate-300 leading-tight">Motor IA Ultra HD</span>
+              <span className="text-[11px] sm:text-xs md:text-sm font-medium text-slate-300 leading-tight">Motor IA Ultra HD 8K</span>
             </div>
             <div className="flex items-center gap-2 p-2 sm:p-2.5 rounded-xl bg-navy-900/50 border border-slate-800/90">
               <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 shrink-0" />
-              <span className="text-[11px] sm:text-xs md:text-sm font-medium text-slate-300 leading-tight">Bot Yape / Plin / BCP</span>
+              <span className="text-[11px] sm:text-xs md:text-sm font-medium text-slate-300 leading-tight">100% Retratos de Calidad</span>
             </div>
             <div className="flex items-center gap-2 p-2 sm:p-2.5 rounded-xl bg-navy-900/50 border border-slate-800/90">
               <HeartHandshake className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-pink-400 shrink-0" />
-              <span className="text-[11px] sm:text-xs md:text-sm font-medium text-slate-300 leading-tight">Catálogo & Temas Libres</span>
+              <span className="text-[11px] sm:text-xs md:text-sm font-medium text-slate-300 leading-tight">100+ Temáticas de Catálogo</span>
             </div>
           </div>
 

@@ -9,15 +9,14 @@ import {
   getUser,
   upsertUser,
   updateUser,
+  deleteUser,
   getAllUsers,
   saveGeneration,
   updateGeneration,
   getGenerationsByUser,
   getAllGenerations,
   savePayment,
-  getAllPayments,
-  checkAndIncrementVoucherAttempt,
-  getPeruDateString
+  getAllPayments
 } from './db.js';
 
 dotenv.config({ override: true });
@@ -47,30 +46,15 @@ if (fs.existsSync(distDir)) {
 // ENVIRONMENT & CREDENTIALS CONFIGURATION (READ FROM PROCESS.ENV)
 // -------------------------------------------------------------
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_KEY || '';
 
 const WHATSAPP_SUPPORT_PHONE = process.env.WHATSAPP_PHONE || '+51 907 318 642';
 const WHATSAPP_SUPPORT_NUMBER_CLEAN = process.env.WHATSAPP_CLEAN || '51907318642';
-
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
-
-function getGoogleRedirectUri(req) {
-  if (process.env.GOOGLE_REDIRECT_URI) return process.env.GOOGLE_REDIRECT_URI;
-  if (process.env.RENDER_EXTERNAL_URL) return `${process.env.RENDER_EXTERNAL_URL}/callback`;
-  if (req && req.headers && req.headers.host) {
-    const protocol = req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http');
-    return `${protocol}://${req.headers.host}/callback`;
-  }
-  return `http://localhost:${PORT}/callback`;
-}
 
 const PAYMENT_INFO = {
   yapePhone: '917858325',
   yapeHolder: 'Jonathan Encina',
   bcpAccount: '21505929964057',
   bcpCci: '00221510592996405728',
-  price: 15,
   tokensPerPackage: 50,
   whatsappPhone: WHATSAPP_SUPPORT_PHONE
 };
@@ -236,147 +220,86 @@ async function processQueue() {
 }
 
 // -------------------------------------------------------------
-// GOOGLE OAUTH 2.0 FLOW ENDPOINTS
+// CLIENT AUTHENTICATION (EMAIL & PASSWORD DIRECT ACCESS)
 // -------------------------------------------------------------
-app.get('/auth/google', (req, res) => {
-  const redirectUri = encodeURIComponent(getGoogleRedirectUri(req));
-  const scope = encodeURIComponent('openid profile email');
-  const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
-  res.redirect(googleAuthUrl);
-});
-
-app.get('/callback', async (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
-    const { code, error } = req.query;
-    if (error || !code) {
-      return res.redirect('/?auth_error=' + encodeURIComponent(error || 'Acceso cancelado'));
-    }
-
-    const redirectUri = getGoogleRedirectUri(req);
-    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code: code.toString(),
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        redirect_uri: redirectUri,
-        grant_type: 'authorization_code'
-      })
-    });
-
-    const tokenData = await tokenResponse.json();
-    if (!tokenResponse.ok || !tokenData.access_token) {
-      return res.redirect('/?auth_error=' + encodeURIComponent('Error al canjear token con Google'));
-    }
-
-    const userinfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` }
-    });
-    const googleUser = await userinfoResponse.json();
-    if (!userinfoResponse.ok || !googleUser.email) {
-      return res.redirect('/?auth_error=' + encodeURIComponent('No se pudo obtener el perfil de Google'));
-    }
-
-    const userId = googleUser.email.toLowerCase().trim();
-    const user = await upsertUser({
-      id: userId,
-      googleId: googleUser.sub || '',
-      email: userId,
-      name: googleUser.name || userId.split('@')[0],
-      avatar: googleUser.picture || 'https://api.dicebear.com/7.x/bottts/svg?seed=' + encodeURIComponent(userId)
-    });
-
-    res.redirect(`/?auth_user=${encodeURIComponent(JSON.stringify(user))}`);
-  } catch (err) {
-    console.error('Error in /callback:', err);
-    res.redirect('/?auth_error=' + encodeURIComponent('Error en la autenticación'));
-  }
-});
-
-app.post('/api/auth/google', async (req, res) => {
-  try {
-    const { credential } = req.body;
-    if (!credential) {
-      return res.status(400).json({ error: 'Credencial de Google requerida' });
-    }
-
-    let email = '';
-    let name = '';
-    let picture = '';
-    let googleId = '';
-
-    try {
-      const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`);
-      if (verifyRes.ok) {
-        const googleData = await verifyRes.json();
-        email = googleData.email;
-        name = googleData.name;
-        picture = googleData.picture;
-        googleId = googleData.sub;
-      } else {
-        const decoded = parseJwt(credential);
-        if (decoded && decoded.email) {
-          email = decoded.email;
-          name = decoded.name;
-          picture = decoded.picture;
-          googleId = decoded.sub;
-        }
-      }
-    } catch (e) {
-      const decoded = parseJwt(credential);
-      if (decoded && decoded.email) {
-        email = decoded.email;
-        name = decoded.name;
-        picture = decoded.picture;
-        googleId = decoded.sub;
-      }
-    }
-
-    if (!email) {
-      return res.status(400).json({ error: 'No se pudo verificar la credencial de Google' });
-    }
-
-    const userId = email.toLowerCase().trim();
-    const user = await upsertUser({
-      id: userId,
-      googleId,
-      email: userId,
-      name: name || userId.split('@')[0],
-      avatar: picture || 'https://api.dicebear.com/7.x/bottts/svg?seed=' + encodeURIComponent(userId)
-    });
-
-    const userGenerations = await getGenerationsByUser(userId);
-    res.json({ success: true, user, generations: userGenerations });
-  } catch (err) {
-    console.error('Error in /api/auth/google:', err);
-    res.status(500).json({ error: 'Error en la verificación de Google' });
-  }
-});
-
-app.post('/api/auth/quick-login', async (req, res) => {
-  try {
-    const { email, name } = req.body;
+    const { email, password } = req.body;
     if (!email || !email.includes('@')) {
       return res.status(400).json({ error: 'Por favor ingresa un correo electrónico válido' });
     }
+    if (!password) {
+      return res.status(400).json({ error: 'Por favor ingresa tu contraseña' });
+    }
 
     const userId = email.toLowerCase().trim();
-    const displayName = name && name.trim() ? name.trim() : userId.split('@')[0];
+    const user = await getUser(userId);
 
-    const user = await upsertUser({
-      id: userId,
-      googleId: 'email_' + Date.now(),
-      email: userId,
-      name: displayName,
-      avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=' + encodeURIComponent(userId)
-    });
+    if (!user || user.isAuthorized === false) {
+      return res.status(403).json({
+        error: 'Este correo no está registrado o aún no cuenta con autorización de acceso. Contacta con administración para habilitar tu acceso.',
+        unauthorized: true
+      });
+    }
+
+    // Verify password if user has one configured
+    if (user.password && user.password.trim() !== '') {
+      if (user.password.trim() !== password.trim()) {
+        return res.status(401).json({
+          error: 'Contraseña incorrecta. Por favor verifica tu clave o solicítala al administrador.'
+        });
+      }
+    } else {
+      // If user was created without a password, set this password
+      await updateUser(userId, { password: password.trim() });
+      user.password = password.trim();
+    }
 
     const userGenerations = await getGenerationsByUser(userId);
     res.json({ success: true, user, generations: userGenerations });
   } catch (err) {
-    console.error('Error in /api/auth/quick-login:', err);
+    console.error('Error in /api/auth/login:', err);
     res.status(500).json({ error: 'Error al iniciar sesión' });
+  }
+});
+
+app.post('/api/auth/set-password', async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Por favor ingresa un correo electrónico válido' });
+    }
+    if (!password || password.trim().length < 3) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 3 caracteres' });
+    }
+
+    const userId = email.toLowerCase().trim();
+    const user = await getUser(userId);
+
+    if (!user || user.isAuthorized === false) {
+      return res.status(403).json({
+        error: 'Tu correo aún no ha sido autorizado en el sistema por el administrador. Solicita tu acceso primero.',
+        unauthorized: true
+      });
+    }
+
+    const updates = { password: password.trim() };
+    if (name && name.trim()) {
+      updates.name = name.trim();
+    }
+
+    const updatedUser = await updateUser(userId, updates);
+    const userGenerations = await getGenerationsByUser(userId);
+
+    res.json({
+      success: true,
+      message: 'Contraseña establecida exitosamente',
+      user: updatedUser,
+      generations: userGenerations
+    });
+  } catch (err) {
+    console.error('Error in /api/auth/set-password:', err);
+    res.status(500).json({ error: 'Error al establecer contraseña' });
   }
 });
 
@@ -407,14 +330,13 @@ app.post('/api/generate', async (req, res) => {
 
     const userId = userEmail.toLowerCase().trim();
     const user = await getUser(userId);
-    if (!user) {
-      return res.status(401).json({ error: 'Usuario no registrado. Inicia sesión con Google.' });
+    if (!user || user.isAuthorized === false) {
+      return res.status(401).json({ error: 'Usuario no autorizado. Inicia sesión con tu correo y contraseña.' });
     }
 
-    const isFreeGeneration = !user.hasUsedFreeTrial && user.tokens === 1;
     if (user.tokens <= 0) {
       return res.status(403).json({
-        error: 'No tienes fotos disponibles. Adquiere el paquete de 50 fotos por S/ 15 para continuar creando.',
+        error: 'No tienes fotos disponibles en tu cuenta. Contacta al administrador para recargar tus fotos.',
         needsRecharge: true
       });
     }
@@ -447,7 +369,7 @@ app.post('/api/generate', async (req, res) => {
       themeName: themeName || 'Tema Personalizado',
       themePrompt,
       customDetails,
-      isWatermarked: isFreeGeneration,
+      isWatermarked: false,
       status: 'queued',
       predictionId: null,
       outputUrl: null,
@@ -471,7 +393,7 @@ app.post('/api/generate', async (req, res) => {
       status: 'queued',
       queuePosition: queuePosition,
       estimatedSeconds: estimatedSeconds,
-      isWatermarked: isFreeGeneration
+      isWatermarked: false
     });
 
   } catch (err) {
@@ -539,317 +461,6 @@ app.get('/api/prediction/:predictionId', (req, res) => {
   res.json({ status: 'starting' });
 });
 
-// -------------------------------------------------------------
-// INTELLIGENT PAYMENT AUDIT WITH 3-ATTEMPT DAILY LIMIT
-// -------------------------------------------------------------
-// -------------------------------------------------------------
-// INTELLIGENT PAYMENT AUDIT WITH GEMINI 2.5 FLASH & ERROR HANDLING
-// -------------------------------------------------------------
-async function analyzeVoucherWithGemini(voucherBase64) {
-  if (!voucherBase64) {
-    return {
-      ok: false,
-      errorType: 'MISSING_IMAGE',
-      detail: 'No se subió imagen de comprobante.'
-    };
-  }
-
-  let mimeType = 'image/jpeg';
-  let rawBase64 = voucherBase64;
-  if (voucherBase64.startsWith('data:')) {
-    const matches = voucherBase64.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
-    if (matches && matches.length === 3) {
-      mimeType = matches[1];
-      rawBase64 = matches[2];
-    }
-  }
-
-  const now = new Date();
-  const peruFormatter = new Intl.DateTimeFormat('es-PE', {
-    timeZone: 'America/Lima',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  });
-  const peruTimeStr = peruFormatter.format(now);
-  const peruDateOnly = peruTimeStr.split(',')[0].trim();
-
-  const prompt = `
-Eres un auditor experto de seguridad financiera e Inteligencia Artificial para Estudio Smart en Perú.
-Analiza este comprobante de pago con MÁXIMA RIGUROSIDAD.
-
-DATOS ACTUALES DE REFERENCIA EN PERÚ:
-- Fecha y Hora actual exacta en Perú (UTC-5): ${peruTimeStr}
-- Fecha de hoy en Perú: ${peruDateOnly}
-- Titular oficial de la cuenta: Jonathan Encina (Yape 917858325 / BCP 21505929964057)
-- Monto requerido para el paquete: S/ 15.00 PEN (o superior)
-- Antigüedad máxima permitida: 2 horas (120 minutos)
-
-REGLAS DE AUDITORÍA:
-1. Comprueba si la imagen es un comprobante de pago genuino y completado con éxito.
-2. Extrae con exactitud:
-   - "metodo_pago": "Yape", "Plin", "BCP", "Interbank", etc.
-   - "monto": número decimal exacto pagado en Soles (ej: 15.00)
-   - "fecha_comprobante": fecha visible en el comprobante (formato DD/MM/YYYY)
-   - "hora_comprobante": hora visible en el comprobante (formato HH:MM)
-   - "numero_operacion": código o número de operación visible
-   - "destinatario": nombre o número receptor visible
-   - "minutos_antiguedad": minutos transcurridos estimados desde que se hizo el pago hasta ahora (${peruTimeStr}).
-   - "es_valido_s15_reciente": true SOLAMENTE SI cumple TODAS estas condiciones:
-       a) El monto es IGUAL O MAYOR a S/ 15.00 PEN.
-       b) La fecha corresponde exactamente a HOY (${peruDateOnly}) en Perú.
-       c) La antigüedad es MENOR O IGUAL A 2 HORAS (120 minutos).
-       d) Es un comprobante auténtico y legible.
-   - "motivo_rechazo": si es_valido_s15_reciente es false, explica claramente en español la razón (ej: "El comprobante es de una fecha anterior a hoy (emitido el DD/MM/YYYY)", "El pago tiene más de 2 horas de antigüedad (emitido hace X minutos)", "El monto pagado es de S/ X y no de S/ 15.00", "La imagen no es un comprobante de pago legible").
-
-Devuelve ÚNICAMENTE un JSON válido:
-{
-  "es_valido_s15_reciente": true,
-  "metodo_pago": "Yape",
-  "monto": 15.00,
-  "moneda": "PEN",
-  "fecha_comprobante": "15/09/2026",
-  "hora_comprobante": "10:10",
-  "numero_operacion": "98765432",
-  "destinatario": "Jonathan Encina",
-  "minutos_antiguedad": 5,
-  "motivo_rechazo": null
-}
-`;
-
-  if (!GEMINI_API_KEY) {
-    console.error('❌ Error: GEMINI_API_KEY no está configurada en las variables de entorno.');
-    return {
-      ok: false,
-      errorType: 'AI_UNAVAILABLE_404',
-      detail: 'Clave GEMINI_API_KEY no configurada en el servidor.'
-    };
-  }
-
-  const payload = {
-    contents: [
-      {
-        parts: [
-          { text: prompt },
-          {
-            inlineData: {
-              mimeType: mimeType,
-              data: rawBase64
-            }
-          }
-        ]
-      }
-    ],
-    generationConfig: {
-      temperature: 0.1,
-      responseMimeType: 'application/json'
-    }
-  };
-
-  const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro'];
-  let lastErrorDetail = '';
-
-  for (const model of models) {
-    try {
-      console.log(`🔍 Consultando ${model} para auditar comprobante...`);
-      const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (apiRes.ok) {
-        const jsonRes = await apiRes.json();
-        const rawText = jsonRes.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (rawText) {
-          let clean = rawText.trim();
-          if (clean.startsWith('```json')) clean = clean.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-          else if (clean.startsWith('```')) clean = clean.replace(/^```\s*/, '').replace(/\s*```$/, '');
-          const parsed = JSON.parse(clean);
-          console.log(`✅ Auditoría exitosa con ${model}:`, parsed);
-          return { ok: true, data: parsed };
-        }
-      } else {
-        const errText = await apiRes.text();
-        lastErrorDetail = `Status ${apiRes.status} (${model}): ${errText.substring(0, 200)}`;
-        console.warn(`Aviso ${model} (${apiRes.status}):`, errText);
-      }
-    } catch (e) {
-      lastErrorDetail = `${model} error: ${e.message}`;
-      console.warn(`Error llamando ${model}:`, e.message);
-    }
-  }
-
-  return {
-    ok: false,
-    errorType: 'AI_UNAVAILABLE_404',
-    detail: lastErrorDetail || 'El servicio de IA no pudo procesar la imagen.'
-  };
-}
-
-app.post('/api/verify-payment', async (req, res) => {
-  try {
-    const { userEmail, method, operationCode, voucherBase64 } = req.body;
-
-    if (!userEmail) return res.status(400).json({ error: 'Email de usuario requerido' });
-    if (!voucherBase64) return res.status(400).json({ error: 'Por favor sube la captura de tu comprobante de pago.' });
-
-    const userId = userEmail.toLowerCase().trim();
-    const user = await getUser(userId);
-    if (!user) {
-      return res.status(404).json({ error: 'Usuario no encontrado. Inicia sesión primero.' });
-    }
-
-    // 1. Check & Enforce Daily Limit (Max 3 voucher upload attempts per day)
-    const attemptCheck = await checkAndIncrementVoucherAttempt(userId);
-    const whatsappMessage = encodeURIComponent(
-      `Hola Estudio Smart, solicito revisión humana de mi comprobante de pago de S/ 15.\nMi cuenta: ${userId}\nCódigo OP: ${operationCode || 'Adjunto imagen'}`
-    );
-    const whatsappUrl = `https://wa.me/${WHATSAPP_SUPPORT_NUMBER_CLEAN}?text=${whatsappMessage}`;
-
-    if (!attemptCheck.allowed) {
-      return res.status(429).json({
-        success: false,
-        isRejected: true,
-        statusCode: 429,
-        errorType: 'DAILY_LIMIT_REACHED',
-        error: 'Has alcanzado el límite máximo de 3 intentos de verificación de comprobante por hoy.',
-        reason: 'Por seguridad del sistema solo se permiten 3 comprobantes diarios por cliente. Escríbenos a WhatsApp para validarlo manualmente.',
-        attemptsToday: attemptCheck.attemptsToday,
-        attemptsLeft: 0,
-        maxAttempts: 3,
-        whatsappPhone: WHATSAPP_SUPPORT_PHONE,
-        whatsappLink: whatsappUrl
-      });
-    }
-
-    // 2. Perform Intelligent AI Audit
-    const analysisResult = await analyzeVoucherWithGemini(voucherBase64);
-
-    // If Gemini could not process the image -> Return 404 Error (AI Failure)
-    if (!analysisResult.ok || !analysisResult.data) {
-      console.error('❌ Error 404: La IA no procesó la imagen del comprobante. Detalle:', analysisResult.detail);
-      return res.status(404).json({
-        success: false,
-        isRejected: true,
-        statusCode: 404,
-        errorType: 'AI_UNAVAILABLE_404',
-        error: 'Error 404: La IA no pudo procesar o analizar la imagen del comprobante.',
-        reason: 'La IA no pudo procesar la imagen (Error 404). Puedes enviar tu comprobante directamente a nuestro WhatsApp para que un humano lo valide y te active tus 50 fotos.',
-        detail: analysisResult.detail,
-        attemptsLeft: attemptCheck.attemptsLeft,
-        whatsappPhone: WHATSAPP_SUPPORT_PHONE,
-        whatsappLink: whatsappUrl
-      });
-    }
-
-    const aiAnalysis = analysisResult.data;
-    const detectedOpCode = (aiAnalysis.numero_operacion || operationCode || '').trim();
-    const detectedAmount = Number(aiAnalysis.monto) || 0;
-    const isRecentAndValid = aiAnalysis.es_valido_s15_reciente === true && detectedAmount >= 15;
-
-    // Check duplicate operation code
-    if (detectedOpCode && detectedOpCode.length > 3) {
-      const allPayments = await getAllPayments();
-      const isDuplicate = allPayments.some(
-        p => p.status === 'verified' && p.operationCode && p.operationCode.trim().toLowerCase() === detectedOpCode.toLowerCase()
-      );
-      if (isDuplicate) {
-        return res.status(422).json({
-          success: false,
-          isRejected: true,
-          statusCode: 422,
-          errorType: 'DUPLICATE_PAYMENT',
-          error: 'Error en datos: Este comprobante / código de operación (' + detectedOpCode + ') ya fue verificado anteriormente.',
-          reason: 'El código de operación ya fue utilizado. Si crees que es un error, contáctanos a WhatsApp.',
-          detectedData: {
-            monto: detectedAmount,
-            fecha: aiAnalysis.fecha_comprobante,
-            hora: aiAnalysis.hora_comprobante,
-            metodo: aiAnalysis.metodo_pago,
-            minutos_antiguedad: aiAnalysis.minutos_antiguedad,
-            numero_operacion: detectedOpCode
-          },
-          attemptsLeft: attemptCheck.attemptsLeft,
-          whatsappPhone: WHATSAPP_SUPPORT_PHONE,
-          whatsappLink: whatsappUrl
-        });
-      }
-    }
-
-    // If Payment Data is Invalid (wrong hour, wrong day, wrong amount) -> Return 422 Error (Error en datos)
-    if (!isRecentAndValid) {
-      const rejectReason = aiAnalysis.motivo_rechazo || 'El comprobante no corresponde al monto de S/ 15.00 o tiene más de 2 horas de antigüedad.';
-      console.warn(`❌ Error en datos de pago para ${userId}: ${rejectReason} (Monto: S/ ${detectedAmount}, Antigüedad: ${aiAnalysis.minutos_antiguedad}m)`);
-
-      return res.status(422).json({
-        success: false,
-        isRejected: true,
-        statusCode: 422,
-        errorType: 'INVALID_PAYMENT_DATA',
-        error: 'Error en datos: ' + rejectReason,
-        reason: rejectReason,
-        detectedData: {
-          monto: detectedAmount,
-          fecha: aiAnalysis.fecha_comprobante,
-          hora: aiAnalysis.hora_comprobante,
-          metodo: aiAnalysis.metodo_pago,
-          minutos_antiguedad: aiAnalysis.minutos_antiguedad,
-          numero_operacion: detectedOpCode
-        },
-        attemptsLeft: attemptCheck.attemptsLeft,
-        whatsappPhone: WHATSAPP_SUPPORT_PHONE,
-        whatsappLink: whatsappUrl
-      });
-    }
-
-    // Payment Approved Successfully!
-    const tokensToAdd = PAYMENT_INFO.tokensPerPackage; // 50 tokens
-    const now = new Date();
-    const peruDateStr = now.toLocaleDateString('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric' });
-
-    const paymentRecord = {
-      id: 'pay_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
-      userId,
-      method: aiAnalysis.metodo_pago || method || 'yape',
-      amount: detectedAmount,
-      status: 'verified',
-      voucherImage: 'voucher_verified_ai',
-      operationCode: detectedOpCode || ('OP-' + Math.floor(100000 + Math.random() * 900000)),
-      detectedData: aiAnalysis,
-      verifiedBy: 'IA_Automatica',
-      verifiedAt: now.toISOString(),
-      createdAt: now.toISOString()
-    };
-
-    await savePayment(paymentRecord);
-    const newTokens = (user.tokens || 0) + tokensToAdd;
-    await updateUser(userId, { tokens: newTokens });
-
-    console.log(`✅ ¡PAGO APROBADO! Usuario: ${userId}, Monto: S/ ${detectedAmount}, +50 fotos acreditadas (Total: ${newTokens})`);
-
-    res.json({
-      success: true,
-      message: `¡Pago de S/ ${detectedAmount.toFixed(2)} verificado con éxito! Se han acreditado ${tokensToAdd} fotos Ultra HD.`,
-      tokensAdded: tokensToAdd,
-      newTotalTokens: newTokens,
-      payment: paymentRecord
-    });
-
-  } catch (err) {
-    console.error('Error in /api/verify-payment:', err);
-    res.status(500).json({
-      error: 'Error interno en la verificación de pago: ' + err.message,
-      whatsappPhone: WHATSAPP_SUPPORT_PHONE,
-      whatsappLink: `https://wa.me/${WHATSAPP_SUPPORT_NUMBER_CLEAN}?text=${encodeURIComponent('Hola Estudio Smart, tuve un error al verificar mi pago de S/ 15.')}`
-    });
-  }
-});
-
 app.get('/api/history/:email', async (req, res) => {
   const userId = req.params.email.toLowerCase().trim();
   const allUserGens = await getGenerationsByUser(userId);
@@ -882,6 +493,102 @@ app.get('/api/admin/users', async (req, res) => {
   } catch (err) {
     console.error('Error in /api/admin/users:', err);
     res.status(500).json({ error: 'Error al listar usuarios' });
+  }
+});
+
+// Grant / Authorize Access to Email from Admin Panel
+app.post('/api/admin/users/grant-access', async (req, res) => {
+  try {
+    const { email, name, password, tokens, notes } = req.body;
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Debes proporcionar un correo electrónico válido' });
+    }
+
+    const userId = email.toLowerCase().trim();
+    const existing = await getUser(userId);
+
+    // Default tokens is 50 when granting access
+    let assignedTokens = 50;
+    if (tokens !== undefined && tokens !== null && tokens !== '') {
+      const parsedTokens = Number(tokens);
+      if (!isNaN(parsedTokens) && parsedTokens >= 0) {
+        assignedTokens = parsedTokens;
+      }
+    } else if (existing && existing.tokens !== undefined) {
+      assignedTokens = existing.tokens;
+    }
+
+    const assignedPassword = (password && password.trim())
+      ? password.trim()
+      : (existing?.password || 'smart' + Math.floor(1000 + Math.random() * 9000));
+
+    const user = await upsertUser({
+      email: userId,
+      name: (name && name.trim()) ? name.trim() : (existing?.name || userId.split('@')[0]),
+      password: assignedPassword,
+      tokens: assignedTokens,
+      isAuthorized: true,
+      notes: notes || existing?.notes || 'Autorizado por administrador',
+      avatar: existing?.avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=' + encodeURIComponent(userId)
+    });
+
+    console.log(`🔑 [ADMIN] Acceso otorgado a: ${userId} | Clave: ${assignedPassword} | Tokens: ${assignedTokens}`);
+
+    res.json({
+      success: true,
+      message: `Acceso concedido a ${user.email} con ${user.tokens} fotos y contraseña asignada.`,
+      user
+    });
+  } catch (err) {
+    console.error('Error in /api/admin/users/grant-access:', err);
+    res.status(500).json({ error: 'Error al autorizar cliente' });
+  }
+});
+
+// Edit user details from Admin (password, name, tokens, authorization)
+app.post('/api/admin/users/:email/edit', async (req, res) => {
+  try {
+    const userId = req.params.email.toLowerCase().trim();
+    const { name, password, tokens, isAuthorized, notes } = req.body;
+
+    const user = await getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const updates = {};
+    if (name !== undefined) updates.name = name.trim();
+    if (password !== undefined) updates.password = password.trim();
+    if (tokens !== undefined && tokens !== '') {
+      const parsed = Number(tokens);
+      if (!isNaN(parsed)) updates.tokens = Math.max(0, parsed);
+    }
+    if (isAuthorized !== undefined) updates.isAuthorized = Boolean(isAuthorized);
+    if (notes !== undefined) updates.notes = notes;
+
+    const updated = await updateUser(userId, updates);
+
+    console.log(`✏️ [ADMIN] Usuario ${userId} modificado por administrador`);
+    res.json({ success: true, message: 'Datos del cliente actualizados exitosamente', user: updated });
+  } catch (err) {
+    console.error('Error in /api/admin/users/:email/edit:', err);
+    res.status(500).json({ error: 'Error al actualizar datos del cliente' });
+  }
+});
+
+// Delete user permanently
+app.delete('/api/admin/users/:email', async (req, res) => {
+  try {
+    const userId = req.params.email.toLowerCase().trim();
+    const deleted = await deleteUser(userId);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+    console.log(`🗑️ [ADMIN] Usuario ${userId} eliminado permanentemente`);
+    res.json({ success: true, message: `Usuario ${userId} eliminado correctamente` });
+  } catch (err) {
+    console.error('Error in DELETE /api/admin/users/:email:', err);
+    res.status(500).json({ error: 'Error al eliminar usuario' });
   }
 });
 
@@ -1019,7 +726,7 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor ESTUDIO SMART listo en http://localhost:${PORT}`);
     console.log(`⚡ Cola IA y Concurrencia activa (Máx concurrentes Replicate: ${MAX_CONCURRENT_WORKERS})`);
-    console.log(`💳 Límite de seguridad: 3 intentos de comprobante por día por cliente`);
+    console.log(`🔑 Autenticación directa por Correo + Contraseña & Panel Admin activo`);
   });
 }
 

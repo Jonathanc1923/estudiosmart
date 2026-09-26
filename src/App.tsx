@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
-import { Hero } from './components/Hero';
-import { ThemeCatalog } from './components/ThemeCatalog';
-import { PhotoUploader } from './components/PhotoUploader';
+import { HomePage } from './components/HomePage';
+import { CreateStudio } from './components/CreateStudio';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { AuthModal } from './components/AuthModal';
 import { GenerationModal } from './components/GenerationModal';
-import { ResultViewer } from './components/ResultViewer';
 import { PaymentModal } from './components/PaymentModal';
 import { GalleryModal } from './components/GalleryModal';
 import { AdminDashboard } from './components/AdminDashboard';
@@ -13,9 +12,10 @@ import { Footer } from './components/Footer';
 import { THEMES } from './data/themes';
 import { Theme, User, Generation } from './types';
 import { apiFetch } from './utils/api';
-import { Sparkles, Wand2, ArrowRight, ShieldCheck, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 export default function App() {
+  const [currentTab, setCurrentTab] = useState<'home' | 'create'>('home');
   const [user, setUser] = useState<User | null>(() => {
     try {
       const saved = localStorage.getItem('estudio_smart_user');
@@ -50,8 +50,6 @@ export default function App() {
     originalImage: string | null;
   } | null>(null);
 
-  const studioRef = useRef<HTMLDivElement>(null);
-
   // Synchronize user to localStorage
   useEffect(() => {
     if (user) {
@@ -61,34 +59,13 @@ export default function App() {
     }
   }, [user]);
 
-  // Check URL query parameters for Google OAuth callback redirect
+  // Detect URL routes and hash navigation
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const authUserParam = urlParams.get('auth_user');
-    const authErrorParam = urlParams.get('auth_error');
-
-    if (authUserParam) {
-      try {
-        const loggedUser = JSON.parse(decodeURIComponent(authUserParam));
-        setUser(loggedUser);
-        localStorage.setItem('estudio_smart_user', JSON.stringify(loggedUser));
-        window.history.replaceState({}, '', window.location.pathname);
-        setSuccessToast(`¡Sesión iniciada con Google como ${loggedUser.name}! Tienes ${loggedUser.tokens} ${loggedUser.tokens === 1 ? 'foto gratis' : 'fotos'}.`);
-        setTimeout(() => setSuccessToast(null), 4000);
-      } catch (e) {
-        console.error('Failed to parse auth_user parameter:', e);
-      }
-    } else if (authErrorParam) {
-      setErrorMessage(decodeURIComponent(authErrorParam));
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-  }, []);
-
-  // Detect /admi or /admin route
-  useEffect(() => {
-    const checkAdminRoute = () => {
+    const handleRoute = () => {
       const pathname = window.location.pathname.toLowerCase();
       const hash = window.location.hash.toLowerCase();
+
+      // Admin route detection
       if (
         pathname === '/admi' || 
         pathname === '/admin' || 
@@ -99,14 +76,21 @@ export default function App() {
       ) {
         setAdminDashboardOpen(true);
       }
+
+      // Tab routes
+      if (pathname.includes('/crear') || hash.includes('crear')) {
+        setCurrentTab('create');
+      } else if (hash.includes('inicio') || hash.includes('galeria')) {
+        setCurrentTab('home');
+      }
     };
 
-    checkAdminRoute();
-    window.addEventListener('popstate', checkAdminRoute);
-    window.addEventListener('hashchange', checkAdminRoute);
+    handleRoute();
+    window.addEventListener('popstate', handleRoute);
+    window.addEventListener('hashchange', handleRoute);
     return () => {
-      window.removeEventListener('popstate', checkAdminRoute);
-      window.removeEventListener('hashchange', checkAdminRoute);
+      window.removeEventListener('popstate', handleRoute);
+      window.removeEventListener('hashchange', handleRoute);
     };
   }, []);
 
@@ -125,49 +109,31 @@ export default function App() {
     }
   }, []);
 
-  const scrollToStudio = () => {
-    if (studioRef.current) {
-      studioRef.current.scrollIntoView({ behavior: 'smooth' });
+  // Switch between tabs
+  const handleSelectTab = (tab: 'home' | 'create') => {
+    setCurrentTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (tab === 'create') {
+      window.history.pushState({}, '', '#crear');
+    } else {
+      window.history.pushState({}, '', '#inicio');
     }
   };
 
-  const handleAuthSuccess = async (authPayload: { credential?: string; user?: User; generations?: Generation[] }) => {
-    try {
-      if (authPayload.user) {
-        setUser(authPayload.user);
-        setGenerations(authPayload.generations || []);
-        setAuthModalOpen(false);
-        const msg = authPayload.user.tokens > 0 
-          ? `¡Bienvenido, ${authPayload.user.name}! Tienes 1 foto gratis disponible.`
-          : `¡Bienvenido de nuevo, ${authPayload.user.name}!`;
-        setSuccessToast(msg);
-        setTimeout(() => setSuccessToast(null), 4000);
-        return;
-      }
+  const handleNavigateToCreate = (preselectedTheme?: Theme) => {
+    if (preselectedTheme) {
+      setSelectedTheme(preselectedTheme);
+    }
+    handleSelectTab('create');
+  };
 
-      const res = await apiFetch('/api/auth/google', {
-        method: 'POST',
-        body: JSON.stringify(authPayload),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.user) {
-        throw new Error(data.error || 'Error al autenticar con Google');
-      }
-
-      setUser(data.user);
-      setGenerations(data.generations || []);
+  const handleAuthSuccess = (authPayload: { user: User; generations?: Generation[] }) => {
+    if (authPayload.user) {
+      setUser(authPayload.user);
+      setGenerations(authPayload.generations || []);
       setAuthModalOpen(false);
-
-      const msg = data.user.tokens > 0 
-        ? `¡Bienvenido, ${data.user.name}! Tienes 1 foto gratis disponible.`
-        : `¡Bienvenido de nuevo, ${data.user.name}!`;
-      
-      setSuccessToast(msg);
+      setSuccessToast(`¡Bienvenido, ${authPayload.user.name}! Tienes ${authPayload.user.tokens} ${authPayload.user.tokens === 1 ? 'foto disponible' : 'fotos disponibles'}.`);
       setTimeout(() => setSuccessToast(null), 4000);
-    } catch (err: any) {
-      console.error('Auth error:', err);
-      setErrorMessage(err.message || 'Error al verificar con Google');
     }
   };
 
@@ -196,7 +162,10 @@ export default function App() {
 
     if (!userPhoto) {
       setErrorMessage('Por favor sube una foto tuya primero.');
-      scrollToStudio();
+      const uploaderEl = document.getElementById('photo-uploader-section');
+      if (uploaderEl) {
+        uploaderEl.scrollIntoView({ behavior: 'smooth' });
+      }
       return;
     }
 
@@ -253,12 +222,12 @@ export default function App() {
             setIsGenerating(false);
 
             if (typeof pollData.tokensRemaining === 'number') {
-              setUser((prev) => (prev ? { ...prev, tokens: pollData.tokensRemaining, hasUsedFreeTrial: true } : null));
+              setUser((prev) => (prev ? { ...prev, tokens: pollData.tokensRemaining } : null));
             }
 
             setCurrentResult({
               resultImage: pollData.output,
-              isWatermarked: pollData.isWatermarked,
+              isWatermarked: false,
               theme: selectedTheme,
               originalImage: userPhoto,
             });
@@ -268,7 +237,7 @@ export default function App() {
             }
 
             setTimeout(() => {
-              window.scrollTo({ top: 300, behavior: 'smooth' });
+              window.scrollTo({ top: 100, behavior: 'smooth' });
             }, 300);
           } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
             clearInterval(pollInterval);
@@ -288,7 +257,7 @@ export default function App() {
 
   const handleResetForNew = () => {
     setCurrentResult(null);
-    scrollToStudio();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleCloseAdmin = () => {
@@ -298,17 +267,17 @@ export default function App() {
       window.location.pathname.toLowerCase().startsWith('/admin') ||
       window.location.hash.toLowerCase().includes('admi')
     ) {
-      window.history.pushState({}, '', '/');
+      window.history.pushState({}, '', '#inicio');
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#070C18] text-slate-100 flex flex-col selection:bg-cyan-500 selection:text-white relative">
+    <div className="min-h-screen bg-[#070C18] text-slate-100 flex flex-col selection:bg-cyan-500 selection:text-white relative font-sans">
       
       {/* Toast Notification */}
       {successToast && (
-        <div className="fixed top-24 right-4 z-50 p-4 rounded-2xl bg-emerald-500/90 text-navy-950 font-extrabold text-sm shadow-2xl flex items-center gap-2 backdrop-blur-md animate-bounce">
-          <CheckCircle2 className="w-5 h-5 text-navy-950" />
+        <div className="fixed top-20 sm:top-24 right-4 z-50 p-3 sm:p-4 rounded-2xl bg-emerald-500/90 text-navy-950 font-extrabold text-xs sm:text-sm shadow-2xl flex items-center gap-2 backdrop-blur-md animate-bounce">
+          <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5 text-navy-950 shrink-0" />
           <span>{successToast}</span>
         </div>
       )}
@@ -316,92 +285,55 @@ export default function App() {
       {/* Top Navigation */}
       <Navbar
         user={user}
+        currentTab={currentTab}
+        onSelectTab={handleSelectTab}
         onOpenAuth={() => setAuthModalOpen(true)}
         onLogout={handleLogout}
         onOpenPayment={() => setPaymentModalOpen(true)}
         onOpenGallery={() => setGalleryModalOpen(true)}
-        onScrollToStudio={scrollToStudio}
         onOpenAdmin={() => setAdminDashboardOpen(true)}
       />
 
-      {/* Hero Section */}
-      <Hero
-        onStartClick={scrollToStudio}
-        onOpenPricing={() => setPaymentModalOpen(true)}
-      />
-
-      {/* Main Studio Interactive Section */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-10" ref={studioRef}>
-        
-        {/* If showing Result */}
-        {currentResult ? (
-          <ResultViewer
-            resultImage={currentResult.resultImage}
-            originalImage={currentResult.originalImage}
-            theme={currentResult.theme}
-            isWatermarked={currentResult.isWatermarked}
-            user={user}
-            onOpenPayment={() => setPaymentModalOpen(true)}
-            onNewGeneration={handleResetForNew}
+      {/* Main Content Area: Tab-based Routing */}
+      <main className="flex-1 w-full">
+        {currentTab === 'home' ? (
+          /* PAGE 1: INICIO & GALERÍA */
+          <HomePage
+            onNavigateToCreate={handleNavigateToCreate}
+            onOpenPricing={() => setPaymentModalOpen(true)}
           />
         ) : (
-          /* Step-by-Step Creation Studio */
-          <div className="space-y-8 sm:space-y-12 animate-fade-in">
-            
-            {/* Step 1: Theme Catalog with Dropdowns and Custom Prompt */}
-            <ThemeCatalog
-              selectedTheme={selectedTheme}
-              onSelectTheme={(theme) => setSelectedTheme(theme)}
-            />
-
-            {/* Step 2: Photo Uploader */}
-            <div id="photo-uploader-section" className="scroll-mt-24">
-              <PhotoUploader
-                userPhoto={userPhoto}
-                customDetails={customDetails}
-                onPhotoSelected={(b64) => setUserPhoto(b64)}
-                onRemovePhoto={() => setUserPhoto(null)}
-                onCustomDetailsChange={setCustomDetails}
-              />
-            </div>
-
-            {/* Error message alert */}
-            {errorMessage && (
-              <div className="p-3.5 sm:p-4 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs sm:text-sm flex items-center gap-2.5 sm:gap-3">
-                <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
-                <span>{errorMessage}</span>
-              </div>
-            )}
-
-            {/* Step 3: Big Generate Action Button */}
-            <div className="pt-4 sm:pt-6 text-center">
-              <button
-                onClick={handleStartGeneration}
-                disabled={isGenerating}
-                className="relative group overflow-hidden w-full max-w-xl mx-auto py-4 sm:py-5 px-4 sm:px-8 rounded-2xl sm:rounded-3xl bg-gradient-to-r from-cyan-500 via-teal-400 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-navy-950 font-black text-sm sm:text-lg md:text-xl shadow-2xl shadow-cyan-500/30 hover:shadow-cyan-400/50 hover:scale-[1.01] sm:hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 sm:gap-3 cursor-pointer"
-              >
-                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-                <Wand2 className="w-5 h-5 sm:w-6 sm:h-6 text-navy-950 group-hover:rotate-45 transition-transform shrink-0" />
-                <span className="truncate">
-                  {user
-                    ? user.tokens > 0
-                      ? `Generar Retrato (${user.tokens} ${user.tokens === 1 ? 'Foto' : 'Fotos'} disp.)`
-                      : 'Recargar 50 Fotos por S/ 15'
-                    : 'Continuar con Google y Crear Foto Gratis'}
-                </span>
-                <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6 text-navy-950 group-hover:translate-x-1.5 transition-transform shrink-0" />
-              </button>
-
-              <p className="text-[11px] sm:text-xs text-slate-400 mt-3 flex items-center justify-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400" />
-                <span>Tecnología de Inteligencia Artificial Estudio Smart • Calidad Ultra HD</span>
-              </p>
-            </div>
-
-          </div>
+          /* PAGE 2: SUBPÁGINA "CREA TUS FOTOS" */
+          <CreateStudio
+            user={user}
+            selectedTheme={selectedTheme}
+            onSelectTheme={(theme) => setSelectedTheme(theme)}
+            userPhoto={userPhoto}
+            onPhotoSelected={(b64) => setUserPhoto(b64)}
+            onRemovePhoto={() => setUserPhoto(null)}
+            customDetails={customDetails}
+            onCustomDetailsChange={setCustomDetails}
+            isGenerating={isGenerating}
+            onStartGeneration={handleStartGeneration}
+            errorMessage={errorMessage}
+            currentResult={currentResult}
+            onResetForNew={handleResetForNew}
+            onOpenPayment={() => setPaymentModalOpen(true)}
+            onOpenAuth={() => setAuthModalOpen(true)}
+            onBackToHome={() => handleSelectTab('home')}
+          />
         )}
-
       </main>
+
+      {/* Mobile Fixed Bottom Navigation Bar */}
+      <MobileBottomNav
+        currentTab={currentTab}
+        onSelectTab={handleSelectTab}
+        user={user}
+        onOpenAuth={() => setAuthModalOpen(true)}
+        onOpenGallery={() => setGalleryModalOpen(true)}
+        onOpenPayment={() => setPaymentModalOpen(true)}
+      />
 
       {/* Modals */}
       <AuthModal

@@ -89,17 +89,6 @@ export async function initDatabase() {
   }
 }
 
-export function getPeruDateString() {
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Lima',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  return formatter.format(now); // "YYYY-MM-DD"
-}
-
 // -------------------------------------------------------------
 // USER OPERATIONS
 // -------------------------------------------------------------
@@ -115,16 +104,17 @@ export async function upsertUser(userData) {
 
   const user = {
     id: userId,
-    googleId: userData.googleId || existing.googleId || '',
     email: userId,
     name: userData.name || existing.name || userId.split('@')[0],
+    password: userData.password !== undefined ? userData.password : (existing.password || ''),
+    tokens: userData.tokens !== undefined ? userData.tokens : (existing.tokens !== undefined ? existing.tokens : 50),
+    isAuthorized: userData.isAuthorized !== undefined ? userData.isAuthorized : (existing.isAuthorized !== undefined ? existing.isAuthorized : true),
     avatar: userData.avatar || existing.avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=' + encodeURIComponent(userId),
-    tokens: userData.tokens !== undefined ? userData.tokens : (existing.tokens !== undefined ? existing.tokens : 1),
     hasUsedFreeTrial: userData.hasUsedFreeTrial !== undefined ? userData.hasUsedFreeTrial : (existing.hasUsedFreeTrial || false),
     totalGenerated: userData.totalGenerated !== undefined ? userData.totalGenerated : (existing.totalGenerated || 0),
-    voucherAttemptsToday: userData.voucherAttemptsToday !== undefined ? userData.voucherAttemptsToday : (existing.voucherAttemptsToday || 0),
-    lastVoucherAttemptDate: userData.lastVoucherAttemptDate || existing.lastVoucherAttemptDate || getPeruDateString(),
-    createdAt: existing.createdAt || userData.createdAt || new Date().toISOString()
+    notes: userData.notes || existing.notes || '',
+    createdAt: existing.createdAt || userData.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   };
 
   memoryUsers[userId] = user;
@@ -137,54 +127,24 @@ export async function updateUser(email, updates) {
   const existing = memoryUsers[userId];
   if (!existing) return null;
 
-  Object.assign(existing, updates);
+  Object.assign(existing, updates, { updatedAt: new Date().toISOString() });
   memoryUsers[userId] = existing;
   saveJSON(USERS_FILE, memoryUsers);
   return existing;
 }
 
-export async function getAllUsers() {
-  return Object.values(memoryUsers);
+export async function deleteUser(email) {
+  const userId = email.toLowerCase().trim();
+  if (memoryUsers[userId]) {
+    delete memoryUsers[userId];
+    saveJSON(USERS_FILE, memoryUsers);
+    return true;
+  }
+  return false;
 }
 
-// -------------------------------------------------------------
-// VOUCHER ATTEMPT LIMIT PROTECTION (MAX 3 ATTEMPTS PER DAY)
-// -------------------------------------------------------------
-export async function checkAndIncrementVoucherAttempt(email) {
-  const userId = email.toLowerCase().trim();
-  const user = memoryUsers[userId] || await upsertUser({ email: userId });
-  const today = getPeruDateString();
-
-  let attemptsToday = user.voucherAttemptsToday || 0;
-  if (user.lastVoucherAttemptDate !== today) {
-    attemptsToday = 0;
-  }
-
-  const MAX_ATTEMPTS = 3;
-
-  if (attemptsToday >= MAX_ATTEMPTS) {
-    return {
-      allowed: false,
-      attemptsToday: attemptsToday,
-      attemptsLeft: 0,
-      maxAttempts: MAX_ATTEMPTS,
-      resetDate: today
-    };
-  }
-
-  attemptsToday += 1;
-  await updateUser(userId, {
-    voucherAttemptsToday: attemptsToday,
-    lastVoucherAttemptDate: today
-  });
-
-  return {
-    allowed: true,
-    attemptsToday: attemptsToday,
-    attemptsLeft: MAX_ATTEMPTS - attemptsToday,
-    maxAttempts: MAX_ATTEMPTS,
-    resetDate: today
-  };
+export async function getAllUsers() {
+  return Object.values(memoryUsers);
 }
 
 // -------------------------------------------------------------

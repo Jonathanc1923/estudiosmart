@@ -46,8 +46,12 @@ export interface User {
   email: string;
   avatar: string;
   tokens: number;
-  hasUsedFreeTrial: boolean;
+  password?: string;
+  isAuthorized?: boolean;
+  notes?: string;
+  hasUsedFreeTrial?: boolean;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Generation {
@@ -81,6 +85,8 @@ export interface PaymentRequest {
 export interface AdminUser extends User {
   totalGenerated?: number;
   lastActive?: string;
+  password?: string;
+  notes?: string;
 }
 
 export interface ThemeStat {
